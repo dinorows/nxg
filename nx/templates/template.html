@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+ <head>
+   <meta charset="utf-8">
+   <title>Menu</title>
+   <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+ </head>
+ <body>
+    <header>
+      <div class="container">
+        <h2 class="logo">Graph sharding experimentation platform</h2>
+        <strong><nav>
+          <ul class="menu">
+            <li><a href="{{ url_for('home') }}">Home</a></li>
+			<li><a href="{{ url_for('theory') }}">Graph Theory</a></li>
+			<li><a href="{{ url_for('exp1') }}">Experiment 1</a></li>
+			<li><a href="{{ url_for('exp2') }}">Experiment 2</a></li>
+			<li><a href="{{ url_for('exp3') }}">Experiment 3</a></li>
+          </ul>
+        </nav></strong>
+      </div>
+    </header>
+    
+    {% block content %}
+    {% endblock %}
+    
+ </body>
+</html>

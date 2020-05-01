@@ -1,0 +1,5 @@
+Flask==0.12.2
+networkx==2.4
+py2neo
+gremlinpython==3.4.6
+requests

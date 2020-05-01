@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <title>First experiment</title>
+  </head>
+  <body>
+    {% extends "template.html" %}
+    {% block content %}
+<div class="container text">    
+    <h1> Number of Cross-cuts: The true cost of sharding </h1>
+<p>
+If you can view this page, we will assume for the remainder that you ran something like this, mapping
+port 5050 on your host laptop to port 5000 on the docker container dinorows/nxg:
+</p>
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+docker run --rm -p 5050:5000 dinorows/nxg
+</pre></table></div>
+<p>
+We use docker toolbox, and the IP of our docker-machine is 192.168.99.100. So all URL endpoints below are 
+relative to these settings.
+Please modify them to fit your docker environment. If you are running Docker toolbox, you can get the IP of your 
+Linux VM by running docker-machine ip. If you are running Docker native, you can replace the IP with localhost.
+Also keep in mind that you have 3 options to run the container: -d for detached, --rm for attached, and -it 
+for interactive terminal. If you enable verbose options in order to glance at feedback on the command line, 
+you need to pick the -it option. The simplest option is -d.
+</p>
+<p>
+<h4> Breadth-First Search </h4>
+Breadth-First Search (BFS) is preferred over Depth-First Search (DFS) for distributed searches and BFS is the basis of any kind of greedy graph exploration algorithm except for those based on linear algebra methods (involving matrix calculus). So it’s a good representative model of the kinds of queries that might be submitted on the properties of nodes and edges of graph databases.
+For sparse (at about 1% density) planar geometric graphs, we find that 16 shards imply about an equal number of cross-cuts for a Breadth-First Search (BFS) across the entire graph. 
+</p>
+<p>
+A cross-cut is any data mining operation that needs to be continued from one graph shard to another and thus
+involves a network call from one shard to another or from a shard to a master controller and then to the other 
+shard. 
+</p>
+<p>
+Since cross-cuts are by orders of magnitude the most expensive operation on distributed shards, having a handle on the number of cross-cuts required per number of shards is a good predictor of query performance on sharded graphs.
+Let's see if we increase the number of shards, whether this factor grows linearly or exponentially. 
+</p>
+<p>
+NOTE: We can then also vary graph density as another potential benchmark. We could also generalize to non-planar graphs.
+</p>
+<p>
+We synthesize a sharded geometric graph by first creating the shards using the geometric graph type of the networkX
+graph library and then linking a percentage of each shard's most faraway nodes (from center) to other shards'
+faraway nodes. We then run a distributed BFS and count the number of cross-cuts required. 
+</p>
+<p>
+Instead of actually running the distributed BFS in parallel, we simplify the task and run the BFS on each shard serially, 
+since our goal is to count the number of cross-cuts. 
+</p>
+
+<p>
+We start the BFS at a specific node on a specific shard, and as the BFS surface grows and other shards need to be traversed, 
+we add those nodes on a queue and consolidate by shard. The queue begins to grow, reaches a limit, and then 
+begins to decrease. When the queue reaches 0, we’ve completed our distributed BFS. The algorithm for the distributed BFS can 
+be found <a href="https://github.com/dinorows/nxg/nx_g_shard.py" rel="noopener noreferrer" target="_blank">here</a>.
+</p> 
+
+<p>
+For 11x11 - 121 shards, we find:
+</p>
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+---> Distributed BFS on co-located shards complete!
+    203 cross-cuts required for BFS on 121 shards starting from shard 25, node 38
+    Total number of nodes visited over total number of nodes in the entire graph: 13883/24200
+    Seconds doing BFS inside shards: 0.4887359142303467
+    Seconds doing overhead outside shards: 0.04877328872680664
+</pre></table></div>
+
+<p>
+For 50x50 = 2500 shards, we find:
+</p>
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+---> Distributed BFS on co-located shards complete!
+    3867 cross-cuts required for BFS on 2500 shards starting from shard 99, node 127
+    Total number of nodes visited over total number of nodes in the entire graph: 277893/500000
+    Seconds doing BFS inside shards: 8.344182252883911
+    Seconds doing overhead outside shards: 0.7818312644958496
+</pre></table></div>
+<br />
+<br />
+
+<h4>Conclusion</h4>
+<p>
+We repeat with different numbers of shards to verify that the number of cross-cuts for a distributed BFS 
+grows about linearly with the number of shards. The implication is that even if the shards are not 
+by geography, but say randomly ordered across a network, the additional network distance cost would be 
+negligible. Since most graph engines usually distribute shards 
+randomly across network partitions, this is a limitation that is not overly constraining for trillion-node 
+graphs. Some graph engines are beginning to advertise that they can distribute shards 
+intelligently rather than randomly. Even though this will improve query performance, the linear growth rate 
+for cross-cuts ensures it will not be an order of magnitude better. 
+</p>
+<p>
+Sharding is computationally O(n) in query operations, and thus sharded graphs are eminently affordable.
+</p>
+
+<h4>How to run your own experiment</h4>
+<p>
+Each command is a different URL on a flask-based WebAPI running on this dinorows/nxg docker container.
+</p>
+<p>
+We are going to run the experiment with a graph consisting of 10x10 = 100 shards. However, you can create the 
+number of shards you want.
+</p>
+<p>
+NOTE: The number of shards needs to be a square number because of the toroidally wrapped
+topology for linking shards. Note that I have only tested up to about 1,000 shards.
+</p>    
+<p>
+Each shard's nodes and
+edges will be created by the networkX library using parameters you enter for the number of nodes and the
+probablity of edge creation. You also decide the number of faraway nodes for each shard that will be linked
+with edges to other shards' faraway nodes. The graph type for each shard is a networkX geometric graph.
+</p>
+<p>
+Open a new tab on your browser, enter the following URL, and wait for a result on the Web page. With the result,
+your shards have been created on this container. 
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+http://192.168.99.100:5050/create-shards?shards=100&nodes=200&edges=0.08&farnodes=16
+</pre></table></div>
+
+<p>
+You can view the nodes and edges on each shard using the following URL endpoints. In this case, we ask for the 
+nodes, edges, and faraway nodes for shard 0:
+</p>
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+http://192.168.99.100:5050/nodes?id=0
+http://192.168.99.100:5050/edges?id=0
+http://192.168.99.100:5050/most-distant-internal-nodes?id=0&how-many=16
+</pre></table></div>
+
+<p>
+Even though you asked for 200 nodes, you will notice your shards have 232 nodes. That is because faraway nodes
+on each shard get connected to faraway nodes on neighboring shards. The new nodes are "shadow" nodes for nodes
+on neighboring shards. By convention, we divide the number of
+faraway nodes requested by two, then take that number and connect as many faraway nodes on the east of the shard
+with faraway nodes on the west of its eastern neighbor. We repeat with west, north, and south directions. Shadow
+nodes are internally represented by triplets: the id of the shadow node, the id of the remote node, and the id
+of the shard that hosts the remote node.
+</p>
+<p>
+Edges are listed as pairs of connected nodes.
+</p>
+<p>
+The third endpoint command above lists requested faraway nodes as well as their distance from the center node.
+</p>
+<p>
+To run a distributed BFS on the local shards, run the following URL and specify the shard that you want to
+start the BFS on (the BFS will begin at that shard's center node):
+</p>
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+http://192.168.99.100:5050/do-dbfs?shard=0&verbose=0
+</pre></table></div>
+
+<p>
+You may notice that the BFS leads to zero cross-cuts. Indeed, some shards may not present a path from their center
+node to their faraway nodes, since edges are synthesized probabilistically. Make sure you begin the BFS from a 
+shard that leads to cross-cuts. This is by trial and error, just try all shards one by one (i.e. shard=1, 
+shard=2, etc. in the command above). If you enable verbose mode and have started this container in terminal 
+mode (-it docker option), you will be able to see the size of the cross-cut queue grow, reach a limit, and then 
+begin to decrease until it reaches zero and the distributed BFS is complete.
+</p>
+<p>
+As cross-cuts are requested to continue BFS traversals on neighboring shards, all requests are enqueued and
+consolidated. This consolidation is what leads to an O(n) distributed BFS traversal. The algorithm employed is 
+analogous to the
+<a ref="https://en.wikipedia.org/wiki/Bulk_synchronous_parallel" rel="noopener noreferrer" target="_blank">
+bulk synchronous parallel</a> (BSP) bridging model for designing parallel algorithms.
+
+<p>
+By varying the number of shards created, you can observe the number of cross-cuts required for a BFS per number of graph
+shards. The number of cross-cuts required grows about linearly with the number of shards. This implies that 
+sharding is O(n) computationally expensive and thus affordable for graphs too big to be hosted on a single 
+machine.
+</p>
+</div>
+    {% endblock %}
+  </body>
+</html>

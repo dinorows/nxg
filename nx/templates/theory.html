@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <title>Graph Theory</title>
+  </head>
+  <body>
+    {% extends "template.html" %}
+    {% block content %}
+ 
+<div class="container text">
+
+<h1> Graph Theory</h1>
+<h4> Partitioning is hard</h4>
+
+<p>Microsoft researchers[2] state that “Experimental results show that a [good] solution can partition billion-node graphs within several hours on a distributed memory system consisting of merely several machines, and the quality of the partitions produced (…) is comparable to state-of-the-art approaches applied on toy-size graphs”. Indeed, graph partitioning begins with the Bipartite problem[1], a well-known NP-hard problem that cannot be solved in general. In fact, uniform graph partitioning (balanced graph partition problem) can be shown to be NP-complete to approximate within any finite factor. Nevertheless, given the nature of the data, practical ad-hoc solutions can be engineered to optimize partitioning so as to minimize cross-shard communication using heuristics and approximation algorithms.  
+Real life graphs are irregular and complex, albeit often sparse. Most database partitioning algorithms are designed for relatively regular graphs (such as meshes) with generally uniform degree distribution. Many of the features in complex networks are not given enough consideration. Much like it is awkward to build a space-ship without advance knowledge of its trekking range, it is awkward to design a distributed graph without taking advantage of the nature of the data it will store and the queries it will service. A performing graph engine is semantic-aware: Edges sharing a lot of common neighbors in the context of commonly queries terms should be grouped in the same partition. The graph partitioning algorithm should be able to predict the query pattern. Microsoft researchers report an experiment[2] on just 8 machines where one query on a synthetic, power-law graph of 1 billion nodes and 13 billion edges took less than 60 seconds.
+</p>
+
+<h4>Cross cuts</h4>
+
+<p>What are the right technologies to use to build a sparse geographic graph with about 1% density with tens of petabytes of data and tens of trillions of nodes across so that queries can actually run in real time?
+Either we go with expensive custom hardware, or we go with off the shelf. Both options lead to sharding (partitioning of the graph across machines) because there is no Operating System or motherboard that can handle petabytes of data in memory. At a minimum, hundreds if not thousands of shards.
+</p>
+<p>
+A cross-cut is any data mining operation that needs to be continued from one graph shard to another and thus involves a network call from one shard to another or from a shard to a master controller and then to the other shard.
+</p>
+<p>
+The principal bottleneck in performance of a sharded graph are cross-cuts required to execute a query across all shards. Inside a shard, a query can complete very fast, but that query needs to continue to neighboring nodes on neighboring shards, and the amount of time it takes to communicate between shards across a network is an order of magnitude more time than it takes to complete a BFS on one shard. So we need a handle on two things:
+<ul>
+  <li>About how many cross-cuts may be required per query</li>
+  <li>What is an estimate of the cost of a cross-cut</li>
+</ul>
+We need an experimentation platform that will let us count the number of cross-cuts for a typical distributed query, and benchmark the communication cost of a cross-cut for different graph engines. So we built one. We synthesize graph shards that are typical of Geographic Information Systems (GIS). We then connect nodes from each shard to nodes on other neighboring shards in order to obtain a cohesive graph. Instead of relying on expensive Virtual Machines on a public Cloud, we create docker containers to host each shard and emulate a cohesive graph partitioned across a network. We then run a fleet of containers to implement a distributed query and benchmark cross-cuts, in amounts and time.
+</p>
+
+<h4>Canonical Query</h4>
+<p>
+We decide to focus on Breadth-First Search (BFS) query as our paradigmatic query because it is a canonical benchmark[1] of distributed query algorithms on graphs, together with centrality and a few others.
+</p>
+
+<h4>Graph Synthesis</h4>
+<p>
+Modern Graph theory was born in the city of St. Petersburg, Russia, where Leonhard Euler lived. 
+</p>
+
+<p> 
+A graph has nodes (also called vertices) and edges that connect them. Edges can be directed (Twitter graphs), or not (facebook graphs). We use the networkX python library to create our graphs. That library is rich in synthetic graph creation, with different types of graphs available.
+Networks are categorized by the degrees of their nodes: The number of edges. The degree distribution (pdf) P(k) of a network is defined to be the fraction of nodes in the network with degree k. The same information is also sometimes presented in the form of a cumulative degree distribution (cdf): The fraction of nodes with degree smaller than k.
+If there are n nodes in total in a network and nk of them have degree k, then the probability that a node has degree nk is P(k) = nk/n.
+</p>
+
+<p>
+Here below is a random graph with degree 3 (meaning every node has 3 neighbors). Count them!
+</p>
+<img src="{{url_for('static', filename='images/rand3.png')}}" /> 
+
+<p>
+Another simple graph model is the Erdős–Rényi graph (ER) model, in which each of n nodes is independently connected (or not) with probability p (or 1 − p).
+</p>
+
+<p>
+This is what a 50-node Erdős–Rényi graph (where nodes now have a probabilistic degree distribution) looks like. Verify that nodes have varying numbers of edges (neighbors):
+</p>
+<img src="{{url_for('static', filename='images/er.png')}}" />
+
+<p>
+A random graph is one where each node has a normal (gaussian) probability of having a set number of neighbors. In other words, there is a specific degree (the mean of the normal pdf) that will occur much more often than others.
+</p>
+
+<p>
+Making a random network is straightforward: Take 𝑛 nodes and 𝑚 pairs at random and place the edges between the randomly chosen nodes. Also, you could take 𝑛 nodes, compute a probability 𝑝 (from a normal distribution), and create an edge at random to another node. The Erdős–Rényi graph is a special case where the probability for edge creation 𝑝 is fixed.
+</p>
+
+<p>
+A small world was founded in 2004 as one of the first social networks (long before facebook), and is the leading invitation-only Travel and Lifestyle online community.
+Duncan Watts and Steven Strogatz built a small world graph model: a few random links in an otherwise structured graph make the network a small world: the average shortest path is short.
+ER graphs do not have two important properties observed in many real-world networks:
+<ul>
+  <li>They do not generate local clustering and triadic closures. Instead, because they have a constant, random, and independent probability of two nodes being connected, ER graphs have a low clustering coefficient.</li>
+  <li>They do not account for the formation of hubs. Formally, the degree distribution of ER graphs converges to a Poisson distribution, rather than a power law observed in many real-world, scale-free networks.</li>
+</ul>
+</p>
+
+<p>
+So the Watts and Strogatz (WS) model was designed as the simplest possible model that addresses the first of the two limitations. It accounts for clustering while retaining the short average path lengths of the ER model. It does so by interpolating between a randomized structure close to ER graphs and a regular ring lattice. Consequently, the model is able to at least partially explain the "small-world" phenomena in a variety of networks, such as the power grid, neural network of C. elegans, and networks of movie actors.
+As for the second weakness of ER graphs, the Barabási–Albert (BA) model is an algorithm for generating random scale-free networks using a preferential attachment mechanism. What this means is that some nodes are real attractors for all nodes, which want to create an edge with them.
+Several natural and human-made systems, including the Internet, the world wide web, citation networks, and some social networks are thought to be approximately scale-free and certainly contain few nodes (called hubs) with unusually high degree as compared to the other nodes of the network. The BA model tries to explain the existence of such nodes in real networks. 
+The algorithm is named for its inventors Albert-László Barabási and Réka Albert and is a special case of an earlier and more general model called Price's model. The way to create a BA graph of n nodes is to grow it by attaching new nodes each with m edges that are preferentially attached to existing nodes with high degree. Not all nodes will have m neighbors. The initialization is a graph with m nodes and no edges. Graph creation stops when you reach 𝑛 nodes. Here below is an example of a BA graph:
+</p>
+ 
+<p>
+A geometric graph (GG) on the other hand is grown in an interesting way: The graph model places n nodes uniformly at random in the unit cube. Two nodes are joined by an edge if the distance between the nodes is at most radius. Edges are determined using a KDTree when SciPy is available. This reduces the time complexity from O(4𝑛2) to O(𝑛).
+This is an interesting graph because it is the beginning of how one could randomly place assets in a geography. The graph is undirected and without self-loops. Each node has a node attribute pos that stores the position of that node in Euclidean space as provided by the pos API keyword argument or, if pos was not provided, as generated by random_geometric_graph. 
+Here is an example of a geometric graph:
+</p>
+<img src="{{url_for('static', filename='images/geo.png')}}" /> 
+
+<p>
+Geometric graphs have an imbued notion of distance among nodes. Here's one colored by distance from the center node (0.5, 0.5):
+</p> 
+<img src="{{url_for('static', filename='images/geo2.png')}}" /> 
+<br />
+<br />
+
+<h4>Synthesizing a graph from shards</h4>
+<p>
+We leverage the networkX graph library to synthesize geometric graph shards whereby each shard grows its own graph. When edges are created between nodes inside the same shard, we call that edge a regular edge. We then export a list of a certain percentage of the remotest nodes on each graph (geometric graphs have an imbued notion of distance) to a master controller.
+The master controller will then randomly create connections between the remote nodes of each shard, then communicate these to each shard. Each shard will then duplicate intra-shard connections by adding new edges (and new internal nodes) tagged external.
+That way, each graph shard can notify a master controller to continue a graph query on remote shards, We thus have a global distributed graph, with connections among shards.
+We implement a Breadth-first search (BFS) algorithm to locate the shortest path between a node from one shard to a node to any other shard (most optimal kind of search for distributed shards). We can adjust the sparsity of graph shards to have enough remote nodes to ensure a distributed BFS that actually spans many shards (cross-cuts). We can then benchmark performance per number of shards spanned, which is statistically related to the sparsity of the shards.
+We write a graph shard class in python, which can be found (along with all the code for our experimentation platform) <a href="https://github.com/dinorows/nxg/nx_g_shard.py" rel="noopener noreferrer" target="_blank">here</a>. 
+</p>
+
+<h4>Graph density</h4>
+<p>
+A dense graph is generally defined as a graph in which the number of edges is close to the maximal number of possible edges. We know from Euler that a planar graph with n vertices has at most 3n - 6 edges. Let us restrict ourselves to planar graphs since we're geometric graphs. That means that if the number of edges is about 3 times the number of nodes, we have ourselves a dense graph. So if we had 600 edges, we would have a dense planar graph.
+</p>
+
+<p>
+NOTE: For non-planar graphs, that figure is a lot higher, since we can have up to as many pairs as we can find in a collection of 200 nodes: That's 200 choose 2, or (2002)(2200), evaluated here below: About 20,000, or 30 times as many.
+So what's a sparse graph?
+</p>
+
+<p>
+Graph density is usually defined as: 𝐸/ 𝑉<sup>2</sup>
+</p>
+<p>
+with 𝐸 the number of edges and 𝑉 the number of nodes. So if we say that a graph has density 1%, that means that twice the number of edges is a hundredth of 𝑉<sup>2</sup>. So for 200 nodes, that means about 400 edges. Which is what we get with an edge creation probability of 0.08 for a geometric graph of 200 nodes.
+</p>
+
+<p>
+NOTE: Not a big difference in edges for dense vs. sparse planar graphs! A much bigger one for non-planar graphs.
+</p>
+
+<h4>Geometric Graph topology</h4>
+<p>
+Now that we are able to create graph shards with our graph shard class, how do we link the shards in a geographic formation? We can create shards that are linked in cardinal directions (North, South, East, West) with other shards, and we can wrap the shards toroidally when we reach shard edges.
+</p>
+<img src="{{url_for('static', filename='images/topo.png')}}" /> 
+
+<p>
+In the sharded graph above, each graph shard is represented by a number. Its neighbors are in the four cardinal directions (N/S/E/W), and we wrap at the graph edges so that shard #45 is linked to the South with shard #4, and shard #41 is linked to the East with shard #35.
+</p>
+
+<p>
+Here are the python functions that are used to accomplish this:
+</p>
+
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;"> 
+def tw_tr(n):
+    return range(0, n)
+
+def tw_br(n):
+    return range(n**2 - 1, n**2 - 1 - n, -1)
+
+def tw_lc(n):
+    return range(0, n**2 - 1, n)
+
+def tw_rc(n):
+return range(n**2 - 1, 0, -n)
+
+def tw_neigh(i, n):
+    return (
+        i-1 if i not in tw_lc(n) else i-1+n,
+        i+1 if i not in tw_rc(n) else i+1-n,
+        i-n if i not in tw_tr(n) else i-n+n**2,
+        i+n if i not in tw_br(n) else i+n-n**2
+    )
+</pre></table></div> 
+
+<h4>A 100-shard graph</h4>
+<p>
+This is how we can create a graph consisting of 10 x 10 shards, where each shard has 200 nodes, and there is a probability of edge creation per node of 0.08, using the networkX graph library:
+</p>
+
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;"> 
+s = []
+sfar = []
+nshards = 100
+nodes_per_shard = 200
+p_edge_creation = 0.08
+num_far_nodes_per_shard = 16  #this is the number of nodes in each shard that will be connected to another shard's nodes
+
+for i in range(0, nshards):
+    sh = Shard(i)
+    sh.grow_graph(i, nodes_per_shard, p_edge_creation)
+    s.append(sh)
+sfar.append(s[i].most_distant_internal_nodes(num=num_far_nodes_per_shard))
+
+
+sneigh = [None]*nshards
+for i in range(0, nshards):
+sneigh[i] = tw_neigh(i, int(m.sqrt(nshards)))
+
+# geometric graph is undirected, so external nodes need to be 
+#mirrored: a connection from a node on shard p to 
+# a node on shard q needs to be accompanied by a connection from 
+#the node on shard q to the node on shard p
+# Note that I allow pairings to be repeated but I only connect 
+#two shards once, using paired_already as semaphore
+paired_already = []
+for p in range(0, nshards):
+    for q in sneigh[p]:
+        if (p,q) not in paired_already and (q,p) not in paired_already:
+            pairings = sample(set(product([i for i,k in sfar[p]], [i for i,k in sfar[q]])), 8)
+            #print(pairings)
+            for n in pairings:
+                s[p].add_edge_external([(n[0], n[1], 1., 1., q, 1)])  #(ni, ne, x, y, shard, d)
+                s[q].add_edge_external([(n[1], n[0], 1., 1., p, 1)])
+            paired_already.append((p,q))
+</pre></table></div> 
+
+<p>
+Now that we are able to grow graph shards, we run 3 experiments. 
+</p>
+
+<p>
+In the first experiment, we count the 
+number of cross-cuts required per number of graph shards. We find that it varies about linearly with the
+number of shards. This is an important result since it means that sharding is computationally O(n) in query
+operations, and thus sharded graphs are eminently affordable. 
+</p>
+
+<p>
+In the second experiment we benchmark the network time it takes for a cross-cut by emulating network ops
+with cross-container operations. We find that there is an order of magnitude difference between within-container
+and between-container queries, underscoring that the network is the main operations bottleneck and that 
+a fast network is the most critical factor for trillion-node graphs.
+</p>
+<p>     
+In the third experiment, we benchmark two best of breed graph engines: Neo4j and JanusGraph and find that their
+performances are similar and in no way close to the difference between inter-container and intra-container 
+operations, thus confirming that the best choice of graph engine for trillion-node graphs is a fast
+network.
+</p>
+<p>
+You can run all three experiments on your laptop with default parameters, or with your own choice of parameters.
+The experiments can be reached from the top menu items on this page.
+</p> 
+
+<h4>Conclusion</h4>
+Trillion-node and petabyte-data graphs are eminently possible, using today’s best of breed graph engines. 
+The open source nature of the Neo and Janus graph engines and the expressiveness of their DSLs make them good 
+choices for the task. The main performance bottleneck is the network, and a fast network is the best guarantee 
+of query performance. 
+</p>
+<p>
+Graph shards can easily be hosted by an open source container orchestration framework like Kubernetes or Apache 
+Mesos. Sharding and cross-cuts can be managed by the orchestration framework, albeit at the price of tailored 
+implementations of graph query primitives (as in this experimentation platform for BFS across Neo and janus shards).
+The code can be found <a ref="https://github.com/dinrows/nxg/nx_g_shard.py" rel="noopener noreferrer" target="_blank">here</a>.
+
+
+<h4>References</h4>
+<ol>
+	<li> <a href="https://www.codeproject.com/Articles/5263087/Measuring-Graph-Analytics-Performance" rel="noopener noreferrer" target="_blank">Measuring Graph Analytics Performance, Intel Corporation, 2020 
+	</a></li>
+	<li> <a href="https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/Partition.pdf" rel="noopener noreferrer" target="_blank">How to Partition a Billion-Node Graph
+	</a></li>
+	<li> <a href="https://eprint.ncl.ac.uk/file_store/production/249758/CAAB9793-D062-4F69-8F55-484FCDB60EEF.pdf" rel="noopener noreferrer" target="_blank">On the degradation of distributed graph databases with eventual consistency 
+	
+	</a></li>
+	<li> <a href="https://mwhittaker.github.io/blog/an_illustrated_proof_of_the_cap_theorem/" rel="noopener noreferrer" target="_blank">CAP Theorem, 
+	
+	</a></li>
+	<li> <a href="https://arxiv.org/pdf/1301.5121.pdf" rel="noopener noreferrer" target="_blank">Partitioning Graph Databases, Masters’ thesis, 
+	
+	</a></li>
+	<li> <a href="https://books.google.com/books?id=ERxaCwAAQBAJ&pg=PA167&lpg=PA167&dq=neo4j+partitioning+nodes" rel="noopener noreferrer" target="_blank">Adaptive Resource Management and Scheduling for Cloud Computing, 
+	 
+	</a></li>
+	<li> <a href="https://www.sandia.gov/~srajama/publications/PuLP-IPDPS17.pdf" rel="noopener noreferrer" target="_blank">Partitioning Trillion-edge Graphs in Minutes, 
+	
+	</a></li>
+	<li> <a href="http://glaros.dtc.umn.edu/gkhome/metis/parmetis/overview" rel="noopener noreferrer" target="_blank">ParMETIS - Parallel Graph Partitioning and Fill-reducing Matrix Ordering,
+	
+	</a></li>
+	<li> <a href="https://ipads.se.sjtu.edu.cn/projects/powerlyra.html" rel="noopener noreferrer" target="_blank">Differentiated Computation and Partitioning on Skewed Graphs, 
+	
+	</a></li>
+	<li> <a href="https://www.researchgate.net/publication/313356370_Graph_Partitioning_for_Distributed_Graph_Processing" rel="noopener noreferrer" target="_blank">Graph Partitioning for Distributed Graph Processing,
+	
+	</a></li>
+	<li> <a href="http://www.ee.columbia.edu/~zgli/papers/KDD-2017-GraphEdgePartitioning.pdf" rel="noopener noreferrer" target="_blank">Graph Edge Partitioning via Neighborhood Heuristic,
+	
+	</a></li>
+	<li> <a href="https://link.springer.com/content/pdf/10.1007%2F978-3-642-16720-1.pdf" rel="noopener noreferrer" target="_blank">Survey of Graph Database Performance on the HPC Scalable Graph Analysis Benchmark,
+	
+	</a></li>
+	<li> <a href="https://www.cs.cmu.edu/~christos/PUBLICATIONS/siam04.pdf" rel="noopener noreferrer" target="_blank">R-MAT: A Recursive Model for Graph Mining, 
+	
+	</a></li>
+</ol>
+
+</div>
+
+    {% endblock %}
+  </body>
+</html>

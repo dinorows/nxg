@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <title>Third experiment</title>
+  </head>
+  <body>
+    {% extends "template.html" %}
+    {% block content %}
+<div class="container text">  
+<h1>Benchmarking Neo4j and JanusGraph</h1>
+
+<p>  
+We compared best of breed graph engines and narrowed them down to the two graph engines with the most powerful 
+and expressive DSLs for data mining. These are Neo4j and JanusGraph, with the CYPHER and GREMLIN DSLs respectively.
+</p>
+
+<p>
+Expressive DSLs are critical enablers to expressive queries, which translates to better performance and better 
+query analytics. 
+</p>
+
+<p>
+Note: GRAPHML is an emerging DSL, but it has yet to be wholeheartedly adopted by any graph engine.
+</p>
+
+<p> 
+RedisGraph impressed by elementary operations performance, but its implementation of CYPHER is still very 
+incomplete and so its queries cannot be as expressive as Neo queries. 
+</p>
+
+<p>
+TigerGraph gets good reviews for performance, but it is proprietary and its ownership structure (Chinese) 
+makes it improbable that it can be used with an equal amount of transparency as Neo and Janus. 
+</p>
+
+<p>
+Both Neo and Janus are open source, with a company backing Neo, and Apache backing Janus. Language bindings for 
+Neo are more evolved than for Janus (Apache TinkerPop), and this is due to the financial standing of Neo 
+(backed by a revenue-generating company) versus Janus (backed by a volunteer organization).
+</p>
+
+<p> 
+The adoption of Janus by IBM may improve language bindings, but IBM does not have a reputation of openness, so 
+we are not too optimistic about Janus language bindings. This means that instrumenting the graph engine is 
+easier and more performing for Neo than for Janus. However, there is no reason why running Neo and Janus from 
+their own command lines, using their original (Java and groovy, respectively) bindings should not yield equal 
+performance.  
+</p>
+
+<p>
+Neo4j does advertise that its latest release (as of 2020) can handle more nodes than ever before (it advertises 
+quadrillions of nodes), but since holding that many nodes with real data would not be possible on any single 
+machine, it is probably more straightforward to keep the number of nodes per shard to a smaller more manageable
+number.
+</p>
+<p>
+We leverage publicly available Neo4j and JanusGraph docker containers for our experiments. 
+We clone our local networkX-synthesized shards to distinct instances of Neo4j docker containers and janusgraph 
+docker containers, leveraging CYPHER and GREMLIN DSLs respectively.
+</p>
+
+<p>
+Note that with this experiment, you may want to clear containers, images, and log volumes on your docker machine,
+as JanusGraph reserves a lot of space on the docker VM. The terminal command to do so is the following: 
+</p>
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+docker system prune --volumes
+</pre></table></div>
+<p>
+Keep this command in mind as a number of strange docker errors can be attributed to running out of space on the VM.
+</p>
+
+<h4>Synthezing geographic shards</h4>
+<p>
+Since you already ran two experiments with this container, it may make sense to stop it and start a new
+container in order to start fresh.
+</p>
+<p>
+We run the experiment below with a graph made out of four shards, but it is straightforward to repeat the 
+experiment with dozens or hundreds of shards, limited only by the amount of memory on your laptop.
+</p>
+<p>
+We synthesize 4 local networkX geometric graph shards and connect them. We also run a distributed BFS starting 
+on each shard in order to identify which shard will exhibit cross-cut traversals. We will then start the 
+distributed BFS on Janus and Neo starting from that exact shard, to ensure cross-cuts will be required. 
+Since edges are synthesized probabilistically, it is entirely possible that a BFS on one shard will not require 
+cross-cuts (traversals on neighboring shards) because its center node may not be connected to its faraway nodes.  
+</p>
+
+<p>
+Here we create the local shards and execute a distributed BFS on them to identify the shard that leads to cross-cuts.
+</p>
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+http://192.168.99.100:5050/create-shards?shards=4&nodes=200&edges=0.08&farnodes=16
+http://192.168.99.100:5050/do-dbfs?shard=0&verbose=0
+http://192.168.99.100:5050/do-dbfs?shard=1&verbose=0
+http://192.168.99.100:5050/do-dbfs?shard=2&verbose=0
+http://192.168.99.100:5050/do-dbfs?shard=3&verbose=0
+</pre></table></div>
+<p>
+We will now clone these geographic shards to Janus and Neo.
+</p>
+
+<h4>JanusGraph and GREMLIN</h4>
+<p>
+We start 4 instances of JanusGraph, each in its own container, mapped to monotonically increasing ports
+on this host, by running the following commands on a terminal:
+</p>
+
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+### Note may have to run:
+### docker system prune --volumes
+### ESPECIALLY IF YOU GET THE FOLLOWING RUNTIME ERROR:
+### gremlin_python.driver.protocol.GremlinServerError: 499: The traversal source [g] for alias [g] is not configured on the server.
+docker run --rm -p8182:8182 janusgraph/janusgraph:latest
+docker run --rm -p8183:8182 janusgraph/janusgraph:latest
+docker run --rm -p8184:8182 janusgraph/janusgraph:latest
+docker run --rm -p8185:8182 janusgraph/janusgraph:latest
+### note -d and -it options, instead of --rm which allows me to stop container with CTRL-Z
+</pre></table></div>
+
+<p>
+We clone the networkX shards to Janus shards, each one in its own container, by running the following command
+endpoint on a new tab on this browser:
+</p>
+
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+http://192.168.99.100:5050/clone-shards-to-janus?janus-ip=192.168.99.100&janus-start-port=8182&how-many-shards=4&verbose=0
+</pre></table></div>
+
+<p>
+You may examine the edges on the first janus clone by running the following URL command:
+</p>
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+http://192.168.99.100:5050/janus-edges?janus-ip=192.168.99.100&janus-port=8182
+</pre></table></div>
+<p>
+Just change the port for the other janus clones
+</p>
+
+<p>
+We leverage GREMLIN to run a distributed BFS on all containerized Janus shards, starting from the shard 
+identified above and which leads to cross-cuts: 
+</p>
+
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+http://192.168.99.100:5050/do-ddbfs-on-janus-shards?shard=0&verbose=0
+</pre></table></div>
+
+<p>
+Note the time required to complete the distributed BFS on the 4 distributed instances of janusGraph.
+</p>
+
+<h4>Neo4j and CYPHER</h4>
+
+<p>
+We start 4 instances of Neo4j, each in its own container, and mapped to monotonically increasing ports
+on this host:
+</p>
+
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+docker run -p7474:7474 -p7687:7687 --env NEO4J_AUTH=neo4j/test neo4j:latest
+docker run -p7475:7474 -p7688:7687 --env NEO4J_AUTH=neo4j/test neo4j:latest
+docker run -p7476:7474 -p7689:7687 --env NEO4J_AUTH=neo4j/test neo4j:latest
+docker run -p7477:7474 -p7690:7687 --env NEO4J_AUTH=neo4j/test neo4j:latest
+note -d and -it options, instead of --rm which allows me to stop container with CTRL-Z
+</pre></table></div>
+
+<p>
+We clone the networkX shards to Neo shards, each one in its own container:
+</p>
+
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+http://192.168.99.100:5050/clone-shards-to-neo?neo-ip=192.168.99.100&neo-start-port=7474&how-many-shards=4&verbose=0
+</pre></table></div>
+
+<p>
+You may examine the edges on the first neo clone by running the following URL command:
+</p>
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+http://192.168.99.100:5050/neo-edges?neo-ip=192.168.99.100&neo-port=7474
+</pre></table></div>
+<p>
+Just change the port for the other neo clones
+</p>
+
+<p>
+We leverage CYPHER to run a distributed BFS on all containerized Neo shards, starting from the shard 
+identified above: 
+</p>
+
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+http://192.168.99.100:5050/do-ddbfs-on-neo-shards?shard=0&verbose=0
+</pre></table></div>
+
+<p>
+Note the time required to complete the distributed BFS on the 4 distributed instances of neo4j.
+</p>
+
+<h4>Conclusion</h4>
+<p>
+It takes about the same amount of time to run the distributed BFS on both Janus and Neo graph engines. 
+Comparing these results to the order of magnitude difference between a BFS on local shards and a BFS on 
+remote (containerized) shards confirms that the choice of graph engine is not as relevant to performance
+as the choice of a fast network.
+</p>
+<p>
+Note: The additional overhead to running the BFS on Janus and Neo is related to having to cross from this 
+python runtime into different runtime environments: A JVM for Neo and a groovy-based JVM for Janus. 
+Additionally (shockingly), neither Neo nor Janus have a default implementation of BFS, forcing us to write 
+one which is probably not the best performance that can be had. But it is the identical implementation for 
+both Neo and Janus, so we are comparing apples to apples.
+</p>
+<p>
+The code for this experimentation platform can be found 
+<a href="https://github.com/dinrows/nxg/nx_g_shard.py" rel="noopener noreferrer" target="_blank">here</a>.
+</p>
+
+<p>
+Other aspects of graph engines can be benchmarked by adding to this codebase.
+</p>
+
+<p>
+It is telling that you don't require a graph-engine master controller to coordinate operations across shards
+if you are ready to write the primitives that control distributed operations. You could for example 
+have a fleet of docker containers running as pods on a Kubernetes cluster. You can also use another graph 
+engine to be the master controller, with each node being a shard hosted in a Kubernetes pod.
+</p>
+<p>
+The license for a distributed instance of Enterprise Neo may cost lot of pennies, but it would be 
+relatively straightforward to accomplish the same with a Kubernetes fleet of graph shard pods.
+</p>
+
+<h4>Undocumented APIs</h4>
+We've added some other APIs for experimentation purposes. Not required for experiments so far, but maybe
+you have some other ideas..
+</p>
+
+<p>
+You can clear all Janus nodes and edges on the janusGraph container running at the respective IP and port by 
+calling the following URL command:
+</p>
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+http://192.168.99.100:5050/janus-clear?janus-ip=192.168.99.100&janus-port=8182
+</pre></table></div>
+
+<p>
+You can do a BFS on a single Janus instance, starting from multiple nodes, by calling the following URL command:
+</p>
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+http://192.168.99.100:5050/bfs-trees-with-remote-nodes-janus?janus-ip=192.168.99.100&janus-port=8182&sources=22,171,99,7,44&verbose=0
+</pre></table></div>
+
+<p>
+You can clear all Neo nodes and edges by calling the following URL command:
+</p>
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+http://192.168.99.100:5050/neo-clear?neo-ip=192.168.99.100&neo-port=7474
+</pre></table></div>
+
+<p>
+You can do a BFS on a single Neo instance, starting from multiple nodes, by calling the following URL command:
+</p>
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+http://192.168.99.100:5050/bfs-trees-with-remote-nodes-neo?neo-ip=192.168.99.100&neo-port=7474&sources=22,171,99,7,44&verbose=0
+</pre></table></div>
+
+<h4>That's all folks!</h4>
+</div>
+
+    {% endblock %}
+  </body>
+</html>

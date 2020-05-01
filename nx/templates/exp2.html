@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <title>Second Experiment</title>
+  </head>
+  <body>
+    {% extends "template.html" %}
+    {% block content %}
+<div class="container text">  
+<h1>Benchmarking the performance cost of a cross-cut</h1>
+
+<p>
+Now that we have a handle on the number of cross-cuts with experiment 1, what is the performance cost of a cross-cut? 
+For this experiment, we compare a distributed BFS on a locally sharded graph (where all shards live in the 
+same container), with a distributed BFS where the shards live in distinct 
+docker containers, thus emulating the cost of distributing shards across a network. 
+</p>
+   
+<h4>How to run your own experiment</h4>
+<p>
+We are going to run the experiment with a graph consisting of 4 shards with URL commands below. However, you can create the number
+of shards you want. The overall limits are normally decided by what you run inside the containers rather 
+than docker overhead, but keep in mind that at about 1000 containers you start running into Linux networking 
+issues.
+</p>
+
+<h4>All shards are hosted on one container</h4>
+<p>
+Note that this is similar to experiment 1. To create 4 shards all hosted on this container, run the following 
+URL:
+</p>
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+http://192.168.99.100:5050/create-shards?shards=4&nodes=200&edges=0.08&farnodes=16
+</pre></table></div>
+
+<p>
+To run a distributed BFS on the local shards, run the following URL:
+</p>
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+http://192.168.99.100:5050/do-dbfs?shard=0&verbose=0
+</pre></table></div>
+
+<p>
+Make sure you begin the BFS from a shard that will lead to cross-cuts (trial and error). If shard 0 does not
+work out, try shards 1, 2, and 3 successively. If none of these lead to cross-cuts, create new shards with the
+first command above.
+</p>
+
+<p>
+Note the time it takes to do a distributed BFS with cross-cuts. It should be about a hundredth of a second.
+</p>
+
+<h4>Each shard is hosted in its own container</h4>
+<p>
+We are going to start 4 clones of this container. Each container should be mapped to monotonically increasing 
+ports on your host. Since I'm running this very container mapped to port 5050 of my host, this is what I would 
+do to create the 4 clones on ports 5051, 5052, 5053, and 5054 of this host: Run the following commands one by 
+one on a terminal on your laptop.
+</p>
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+### note --it and --rm options instead of -d for better debugging!
+docker run -d -p 5051:5000 dinorows/nxg
+docker run -d -p 5052:5000 dinorows/nxg
+docker run -d -p 5053:5000 dinorows/nxg
+docker run -d -p 5054:5000 dinorows/nxg
+</pre></table></div>
+
+<p>
+Each docker container will host one shard. Each shard's nodes and
+edges will be created by the networkX library using parameters you enter for the number of nodes and the
+probablity of edge creation. You also decide the number of faraway nodes for each shard that will be linked
+with edges to other shards' faraway nodes. The graph type for each shard is a geometric graph.
+</p>
+<p>
+Note that I'm running my containers with Docker toolbox, creating a Linux VM host at IP 192.168.99.100, and
+I'm mapping this container to host port 5050, which is why my URLs below begin with  
+http://192.168.99.100:5050. If you run Docker for Mac or Docker for Windows, you would replace the IP with
+localhost, and the port needs to be the host port mapped to the dinorows/nxg container.
+</p>
+<p>
+Enter the following command URL on a new tab on your browser and wait for a result on the Web page. 
+With the result, your shards have been created on the containers above, one shard per container. Since this 
+very container is running on host port 5050, make sure to start the other four clones on port 5051, 5052, 5053, 
+and 5054.
+</p>
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+http://192.168.99.100:5050/create-remote-shards?shards=4&nodes=200&edges=0.08&farnodes=16&shards-ip=192.168.99.100&shard-ports-start-at=5051&verbose=0
+</pre></table></div>
+
+<p>
+Now specify which shard's center node to begin the BFS on. Hopefully the BFS will reach a faraway node and 
+require continuation on other shards. If it does not, which is possible since after all edges are probabilistically
+created, pick another starting shard. If no shard works out, recreate the shards from scratch. Here we start the
+BFS from the center node of shard 0:
+</p>
+<div style="overflow-x: scroll "> 
+<table bgcolor="#ffffb0" border="0" width="100%" padding="4"> 
+<tbody><tr><td><pre style=" hidden;font-family:courier;">
+http://192.168.99.100:5050/do-ddbfs?shard=0&verbose=0
+</pre></table></div>
+
+<p>
+If shard 0 leads to zero cross-cuts, try shards 1 through 3 successively. If none of them lead to cross-cuts,
+recreate the remote shards with the previous URL command above.
+</p>
+<p>
+The Web page will report how long it took to run the distributed BFS. You should find it took about a tenth
+of a second. You can now compare this with the BFS on 4 shards hosted within one container, above. 
+</p>
+<p>
+There is an order of magnitude difference between the two. That is the effect of the network. It's the biggest 
+bottleneck, bigger than the difference in performance between any two extant graph engines. The next experiment 
+(experiment 3) benchmarks exactly this by contrasting the same distributed BFS on two different best of breed
+graph engines: Neo4j and janusGraph.
+</p>
+
+<h4>Conclusion</h4>
+<p>
+There is an order of magnitude difference in performance between a distributed BFS on local shards in one container
+versus a distributed BFS on shards each in its own container: About 0.01 second for a graph made out of 4 shards
+living in the same container, versus 0.1 second for a graph made out of 4 shards each living in distinct 
+containers. 
+This confirms that the primary performance consideration of a trillion-node graph should be the network, not the
+choice of graph engine. A fast network will make all the difference. 
+</p>
+
+<p>
+In the next experiment, we run a distributed BFS on shards isolated in 
+their own container where the graph engine is Neo4j, and again where the graph engine is JanusGraph. Although 
+Neo4j comes out slightly on top, the performance of the two graph engines is comparable.
+</p>
+
+</div>  
+      
+    {% endblock %}
+  </body>
+</html>

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <title>Synopsis</title>
+  </head>
+  <body>
+    {% extends "template.html" %}
+    {% block content %}
+
+<div class="container text">    
+    <h2> How to build a Trillion node graph </h2>
+	
+	<p>A graph numbering dozens of trillion of nodes already exceeds the human brain in synapses 
+	and the Word Wide Web in URLs. Since there are usually more edges than there are nodes in a graph, 
+	that also means hundreds of trillion or even quadrillion edges. And if you add data to those nodes and edges,
+	you may expect hundreds of Petabytes for real applications. 
+	
+	Since the size of the amount of disk memory that a single 
+	VM is able to buffer does not exceed dozens of Terabytes, it is unlikely that a graph containing that 
+	many nodes and edges and Petabytes of data can be stored on a single machine, notwithstanding the 
+	exotic nature of the machine. Instead, expect a distributed database numbering hundreds and thousands 
+	of “shards” (partitions of a graph). The challenge of a trillion-node graph is the network. </p>
+
+	<p>The corollary is that the choice of the graph engine that hosts each partitioned graph shard is 
+	not as critical a factor, since the major performance bottleneck is crossing shard boundaries across the 
+	network. Like the speed of light between stars, that is a bottleneck that cannot be warped over. </p>
+
+	<p>This container is a graph partitioning experimentation platform that examines the cost 
+	of partitioning a graph across a network for paradigmatic graph queries such as Breadth-First Search (BFS)
+	[1] and benchmarks graph engines such as Neo4j and JanusGraph for this operation.</p> 
+	
+	<p>Please head to the Graph Theory menu item on top before you move on to the experiments underneath it.
+</div>    
+    {% endblock %}
+  </body>
+</html>
